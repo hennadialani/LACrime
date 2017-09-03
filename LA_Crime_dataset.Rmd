@@ -1,0 +1,225 @@
+---
+title: "Crimes of LA - Part 1"
+author: "Henna"
+output: html_document
+---
+```{r, include = FALSE}
+# A project exploring incidents of crime in Los Angeles from 2010 to mid-August 2017. I hope to provide this code to inspire people who normally don't use programming to achieve their data visualization goals - it isn't too bad!
+
+# The HTML file shows a "cleaner" (i.e. without any code) version of the entire data exploration process. 
+```
+#LA Crime
+Los Angeles, the second-largest city in the United States, is known for Hollywood and beautiful weather. Crimes might not be the first thing that come to mind when you think of the city, but ultimately LA is no stranger to crime. I'm putting in a trigger warning (this can have distressing material) because data is no different than any other content collected or curated by humans - it isn't always easy to digest. 
+**Trigger warning: Crime, Violence (Physical and Sexual)**
+
+*I hope this project can shed light on how it is possible to get results quite quickly without pointing and clicking in Microsoft Excel. Please check the RMD file for code*
+
+```{r, include = FALSE}
+#Loading up libraries is important - but not every library is always useful! (Remember to install these beforehand)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(lubridate)
+library(broom)
+library(maps)
+library(leaflet)
+```
+
+#Loading a file
+```{r, show = FALSE}
+#Name things well - don't use file names of datasets already in a preloaded package (i.e. iris).
+LAcrimesdata <- read_csv("~/Documents/LACrime/Crime_Data_From_2010_to_Present.csv")
+```
+
+##Variables in the dataset
+```{r, echo = FALSE}
+colnames(LAcrimesdata)
+```
+
+
+Above are the 26 variables available in the LA crimes data from <https://data.lacity.org/A-Safe-City/Crime-Data-From-2010-to-Present/y8tr-7khq>
+
+##Number of crimes in this dataset
+```{r, echo = FALSE}
+nrow(LAcrimesdata)
+```
+
+
+There are 1570615 crimes in this dataset.
+
+#Location being split up into Longitude and Latitude
+```{r, echo = FALSE}
+head(LAcrimesdata$Location)
+LAcrimesdata<-LAcrimesdata%>%
+  separate(Location, into = c("Latitude","Longitude"), sep = ",")
+LAcrimesdata$Latitude<-gsub("^.", "", LAcrimesdata$Latitude)
+LAcrimesdata$Longitude<-gsub(".$", "", LAcrimesdata$Longitude)
+head(LAcrimesdata$Latitude)
+head(LAcrimesdata$Longitude)
+```
+
+
+I separate the Location variable into Latitude and Longitude to make it easier to visualize later on through a map!
+
+```{r, echo = FALSE}
+#Function to count number of NAs; used in dplyr function summarise_all to apply to all of the columns of the LAcrimesdata dataset.
+CountNas <- function(x){
+  sum(is.na(x))
+}
+
+CountNasTable<-fix_data_frame(as.data.frame(t(LAcrimesdata%>%
+  summarise_all(CountNas))))
+
+CountNasTable%>%
+  filter(V1 == 0)
+```
+Here, I can see which variables have no missing values.
+
+```{r, include = FALSE}
+#Here I'm transforming this data in a format that lets me make nice graphs later!
+LAcrimesdata$`Date Reported` <- mdy(LAcrimesdata$`Date Reported`)
+LAcrimesdata$`Date Occurred` <- mdy(LAcrimesdata$`Date Occurred`)
+```
+
+
+```{r, echo = FALSE}
+LAcrimesdata%>%
+  group_by(`Date Reported`)%>%
+  mutate(NoOfCrimes = n())%>%
+  ggplot(aes(x = `Date Reported`, y = NoOfCrimes))+
+  geom_point(alpha = 0.5)+
+  geom_smooth(method = "lm")+
+  xlab("When did it happen?")+
+  ylab("Number of crimes")
+
+LAcrimesdata%>%
+  group_by(`Date Reported`)%>%
+  mutate(NoOfCrimes = n())%>%
+  ggplot(aes(x = `Date Reported`, y = NoOfCrimes))+
+  geom_point(alpha = 0.5)+
+  geom_smooth(method = "lm")
+
+# LAcrimesdata%>%
+#   summarise(n = n())%>%
+#   ggplot(aes(x = `Date Reported`, y = n))+
+#   geom_point()+
+#   geom_line()
+
+```
+
+#Time of Crime
+I wanted to test out whether crimes truly happen more at night.
+```{r, echo = FALSE}
+LAcrimesdata%>%
+  ggplot(aes(x = `Time Occurred`))+
+  geom_bar()
+```
+Round 1 of graphs show a lot of peaks, but ultimately this data might need a bird's eye perspective first to get an overall picture.
+
+```{r, echo = FALSE}
+LAcrimesdata%>%
+  ggplot(aes(x = substr(`Time Occurred`, 1, 2)))+
+  geom_bar()
+
+```
+
+
+This shows that the largest number of crimes is around 12 o'clock. Interesting, considering that people are told to avoid going out in the dark/at night? I decide to divide up day and night to see if there's anything going on when I zoom out even further. Let's mark day as between 0600 (inclusive) and 1800 (exclusive). Let's mark night as between 1800 (inclusive) and 0600 (exclusive)
+
+```{r, echo = FALSE}
+LAcrimesdata$When <- "0"
+LAcrimesdata$`Time Occurred`<-as.numeric(LAcrimesdata$`Time Occurred`)
+
+LAcrimesdata$When[LAcrimesdata$`Time Occurred` >= 0600 & LAcrimesdata$`Time Occurred` < 1800] <- "Day"
+
+LAcrimesdata$When[!(LAcrimesdata$`Time Occurred` >= 0600 & LAcrimesdata$`Time Occurred` < 1800)] <- "Night"
+
+LAcrimesdata%>%
+  ggplot(aes(x = When))+
+  geom_bar()
+```
+
+
+There are more crimes during the day than night! This disproves my initial thoughts (and conventional wisdom).
+
+
+#Mapping Crime
+```{r, echo = FALSE}
+LAcrimesdata$Longitude<-as.numeric(LAcrimesdata$Longitude)
+LAcrimesdata$Latitude<-as.numeric(LAcrimesdata$Latitude)
+#This was in character form, which cannot be interpreted by the leaflet functions below.
+LAcrimemap <- leaflet()
+LAcrimemap <- addTiles(LAcrimemap)
+LAcrimemap <- addMarkers(LAcrimemap, lng = LAcrimesdata$Longitude, lat = LAcrimesdata$Latitude, clusterOptions = markerClusterOptions())
+LAcrimemap
+```
+
+
+I've been interested in learning how to visualize data in a geographic manner - demarcations on maps reflect a lot of policymaking and history. There are however some missing longitudes and latitudes in this dataset. Therefore, while using the leaflet package (which takes the world's map), you can see quite a lot of crimes near Africa (at 0,0) - which obviously doesn't make sense, since Los Angeles is nowhere near Africa. *Always clean your data!*
+
+If you zoom in further, you can see where the crimes are clustered over different years.
+
+Check out here <https://lh3.google.com/u/0/d/0B7Wcp9505kpTZzcwb2JtaU4wZnM=w2432-h1296-iv1> a nice set of concentric data points I got out of the map when I zoomed into a neighborhood near UCLA.
+
+Let's see which areas have the most common, besides (0,0). From earlier on, we saw that Area Names had no missing values, unlike their counterpart Longitudes/Latitudes.
+
+#Most popular areas with crimes
+```{r, echo = FALSE}
+LAcrimesdata%>%
+  group_by(`Area Name`)%>%
+  summarise(Count = n())%>%
+  ggplot(aes(x = reorder(`Area Name`, desc(Count)), y = Count))+
+  geom_col()+
+  xlab("Area Name")+
+  ggtitle("Places with most crimes")+
+  theme(axis.text.x=element_text(angle=90,hjust=1))
+```
+
+
+We see that 77th Street has the most crimes. How about breaking this by day and night?
+
+```{r, echo = FALSE}
+LAcrimesdata%>%
+  group_by(`Area Name`)%>%
+  mutate(Count = n())%>%
+  ggplot(aes(x = reorder(`Area Name`, desc(Count)), y = Count, fill = When))+
+  geom_col(position = "dodge")+
+  xlab("Area Name")+
+  ggtitle("Places with most crimes")+
+  theme(axis.text.x=element_text(angle=90,hjust=1))
+```
+
+
+These are almost evenly distributed by day and night (which can't really be distinguished well in this kind of bar chart.) Let's divide these into two different distributions.
+
+```{r, echo = FALSE}
+LAcrimesdata%>%
+  filter(When == "Day")%>%
+  group_by(`Area Name`)%>%
+  mutate(Count = n())%>%
+  ggplot(aes(x = reorder(`Area Name`, desc(Count)), y = Count))+
+  geom_col(fill = "pink")+
+  xlab("Area Name")+
+  ggtitle("Places with most crimes - Days")+
+  theme(axis.text.x=element_text(angle=90,hjust=1))
+```
+
+
+```{r, echo = FALSE}
+LAcrimesdata%>%
+  filter(When == "Night")%>%
+  group_by(`Area Name`)%>%
+  mutate(Count = n())%>%
+  ggplot(aes(x = reorder(`Area Name`, desc(Count)), y = Count))+
+  geom_col(fill = "lightblue")+
+  xlab("Area Name")+
+  ggtitle("Places with most crimes - Nights")+
+  theme(axis.text.x=element_text(angle=90,hjust=1))
+
+```
+
+Day and Night don't have the same distribution as overall distribution; 77th Street and Southwest are the top two crime locations during both day and night by quite a lot.
+
+*This concludes part 1 of the educational material for LA Crime. There are hundreds of ways you can examine a single dataset. I hope this is helpful to anyone looking into make their research more reproducible and valid, especially to those from non-technical backgrounds.*
